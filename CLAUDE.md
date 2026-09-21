@@ -62,6 +62,13 @@ docstring. `preflight()` fails fast (~2s) if the port isn't up.
   freshly-computed key string-matches the sidecar. Keys are scoped to the generic
   scene id (`S1`…`S6`), **not** the topic — so switching topics overwrites files.
   This is intentional (one short in flight at a time), not a bug to "fix."
+- **The finished short is the exception — it is NOT clobbered.** `mux/nodes.py`
+  `concat()` names it `output/shorts/<slug>_<short_id>.mp4`, where `short_id` is a
+  content hash of the topic + surviving scene cache keys. Different topics/versions
+  accumulate; identical inputs overwrite the same name (idempotent). Finished
+  shorts are removed only by a successful publish (the planned Upload stage deletes
+  the file it uploads) — never keyed back to a fixed `final_short.mp4`. Don't
+  reintroduce a fixed final filename; that's the flaw this replaced.
 
 Files per stage: `config.py` (guardrail constants), `models.py` (pydantic +
 TypedDicts), `nodes.py` (node fns), `agent.py` (graph + entry point). Plus stage

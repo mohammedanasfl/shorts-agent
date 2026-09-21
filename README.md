@@ -29,7 +29,7 @@ trims every clip to its voiceover length before muxing.
 | 3 | **Video** (`video/`) | `ScriptPackage` JSON | one `S{n}.mp4` clip per scene, 720×1280 portrait | Gemini (Veo) driven via CDP-attached Playwright |
 | 4 | **Audio** (`audio/`) | `ScriptPackage` JSON | one `S{n}.wav` voiceover per scene | Groq Orpheus TTS |
 | 5 | **Caption** (`caption/`) | `AudioPackage` JSON | word-level timings per scene | Groq `whisper-large-v3-turbo` STT |
-| 6 | **Mux** (`mux/`) | `CaptionPackage` JSON | `output/shorts/final_short.mp4` | ffmpeg + Pillow-rendered karaoke captions |
+| 6 | **Mux** (`mux/`) | `CaptionPackage` JSON | `output/shorts/<slug>_<id>.mp4` | ffmpeg + Pillow-rendered karaoke captions |
 | 7 | **Upload** | _(planned)_ | published short | — |
 
 **Audio is a sibling of Video, not downstream of it** — both consume the
@@ -98,13 +98,30 @@ python main.py script   brief.json            > script.json
 python main.py video    script.json           # writes output/videos/S*.mp4
 python main.py audio    script.json           > audio.json      # sibling of video
 python main.py caption  audio.json            > caption.json
-python main.py mux      caption.json          # writes output/shorts/final_short.mp4
+python main.py mux      caption.json          # writes output/shorts/<slug>_<id>.mp4
 ```
 
 - `research` / `script` print their result as JSON / markdown to stdout.
 - `video` / `audio` / `caption` / `mux` also write their artifacts under
   `output/` (gitignored).
 - The **audio → caption → mux** tail runs entirely on Groq — no Gemini quota.
+
+### Output & retention
+
+Finished shorts are written to `output/shorts/<topic-slug>_<id>.mp4`, where `<id>`
+is a content hash of the topic and its scene clips. This means:
+
+- A new run **never clobbers a previous deliverable** — different topics (and
+  edited versions of the same topic) accumulate side by side.
+- Re-running with **identical inputs is idempotent** — same filename, overwritten
+  in place, so you don't pile up duplicate copies.
+
+Finished shorts are only ever removed by a successful publish (the planned
+**Upload** stage deletes the specific file it uploads). Everything under
+`output/` is gitignored. The per-scene intermediates (`output/videos`,
+`output/audio`, `output/captions`, `output/shorts/scenes`) are keyed by generic
+scene id and *are* overwritten when the topic changes — only the final short is
+retained.
 
 ### Video stage — one-time Gemini auth
 
@@ -168,4 +185,4 @@ output/     generated media (gitignored)
 ## Status
 
 Stages 1–6 are built and verified end-to-end (a 6-scene short renders to
-`output/shorts/final_short.mp4`). The **Upload** stage is not yet implemented.
+`output/shorts/<slug>_<id>.mp4`). The **Upload** stage is not yet implemented.

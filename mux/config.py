@@ -12,9 +12,15 @@ VIDEO_DIR = _ROOT / "output" / "videos"
 AUDIO_DIR = _ROOT / "output" / "audio"
 
 # --- Output ------------------------------------------------------------------
-OUTPUT_DIR = _ROOT / "output" / "shorts"           # final short lands here
+OUTPUT_DIR = _ROOT / "output" / "shorts"           # finished shorts land here
 SCENES_DIR = OUTPUT_DIR / "scenes"                  # per-scene muxed clips (intermediate)
-FINAL_NAME = "final_short.mp4"
+# Finished shorts are named "<topic-slug>_<short-id>.mp4" so a new run never
+# clobbers a previous deliverable: different topics/versions accumulate side by
+# side, and the caller (a future upload stage) deletes a short only once it has
+# been published. The short-id is a content hash of the topic + the scene clips,
+# so re-running identical inputs is idempotent (same name, overwritten in place)
+# rather than piling up duplicates.
+SHORT_SLUG_MAXLEN = 40
 
 # --- Geometry / encode (fixed so per-scene clips concat without re-encoding) --
 WIDTH = 720

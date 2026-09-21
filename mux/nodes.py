@@ -7,6 +7,7 @@ concatenating them into the final short. A scene missing its video or audio is
 skipped with a caveat rather than aborting the whole assembly."""
 import hashlib
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -15,9 +16,9 @@ from caption.models import CaptionPackage
 from common.log import log
 from mux.captions import render_scene_captions
 from mux.config import (
-    A_BITRATE, A_CHANNELS, A_CODEC, A_RATE, AUDIO_DIR, CAPTION_STYLE_VERSION, FINAL_NAME,
-    FPS, HEIGHT, MAX_RETRIES_PER_SCENE, OUTPUT_DIR, PIX_FMT, SCENES_DIR, V_CODEC, V_CRF,
-    V_PRESET, VIDEO_DIR, WIDTH,
+    A_BITRATE, A_CHANNELS, A_CODEC, A_RATE, AUDIO_DIR, CAPTION_STYLE_VERSION,
+    FPS, HEIGHT, MAX_RETRIES_PER_SCENE, OUTPUT_DIR, PIX_FMT, SCENES_DIR, SHORT_SLUG_MAXLEN,
+    V_CODEC, V_CRF, V_PRESET, VIDEO_DIR, WIDTH,
 )
 from mux.encoder import MuxError, concat_clips, probe_duration, render_scene_clip, validate_video
 from mux.models import MuxInput, MuxPackage, MuxState, SceneClip
@@ -62,6 +63,27 @@ def _cache_key(scene_id: str, words: list) -> str:
         _ENCODE_SIG,
     ]
     return hashlib.sha256("||".join(parts).encode()).hexdigest()
+
+
+def _slug(topic: str) -> str:
+    """Filesystem-safe, human-readable stem from the topic (lowercase,
+    non-alphanumeric runs collapsed to '-'), so a finished short is recognizable
+    at a glance in output/shorts/."""
+    s = re.sub(r"[^a-z0-9]+", "-", topic.lower()).strip("-")
+    return s[:SHORT_SLUG_MAXLEN].strip("-") or "short"
+
+
+def _short_id(topic: str, ok_clips: list) -> str:
+    """Content address for the finished short: a hash of the topic plus each
+    surviving scene clip's cache key (read from its on-disk sidecar). Identical
+    inputs -> identical id -> same filename (idempotent, overwritten in place);
+    a different topic or an edited scene -> different id -> a new file that sits
+    alongside the old one instead of replacing it."""
+    parts = [topic]
+    for c in ok_clips:
+        sid = c["scene_id"]
+        parts.append(f"{sid}:{_sidecar_text(SCENES_DIR / f'{sid}.key.txt')}")
+    return hashlib.sha256("||".join(parts).encode()).hexdigest()[:12]
 
 
 def _skip(state: MuxState, scene_id: str, caveat: str) -> dict:
@@ -150,12 +172,20 @@ def concat(state: MuxState) -> dict:
         return {"final_path": "", "final_duration": 0.0, "caveats": state["caveats"] + [caveat]}
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    dest = OUTPUT_DIR / FINAL_NAME
+    SCENES_DIR.mkdir(parents=True, exist_ok=True)
+    short_id = _short_id(state["topic"], ok_clips)
+    dest = OUTPUT_DIR / f"{_slug(state['topic'])}_{short_id}.mp4"
+    existed = dest.exists()
     paths = [Path(c["clip_path"]) for c in ok_clips]
-    concat_clips(paths, dest, OUTPUT_DIR / "concat_list.txt")
+    # Throwaway concat manifest kept out of the deliverable dir; removed after.
+    list_file = SCENES_DIR / f"concat_{short_id}.txt"
+    concat_clips(paths, dest, list_file)
     validate_video(dest)
     dur = probe_duration(dest)
-    log("mux", f"concat: {len(ok_clips)} scene(s) -> {dest} ({dur:.2f}s)")
+    list_file.unlink(missing_ok=True)
+    verb = "re-assembled (identical inputs)" if existed else "assembled"
+    log("mux", f"concat: {len(ok_clips)} scene(s) {verb} -> {dest} ({dur:.2f}s); "
+               f"earlier shorts in {OUTPUT_DIR} are kept until uploaded")
     return {"final_path": str(dest), "final_duration": round(dur, 3)}
 
 

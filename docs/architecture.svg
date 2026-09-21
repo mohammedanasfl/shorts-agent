@@ -92,7 +92,7 @@
 
   <!-- final short -->
   <rect x="360" y="762" width="300" height="40" rx="20" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
-  <text x="510" y="787" text-anchor="middle" class="pill">output/shorts/final_short.mp4</text>
+  <text x="510" y="787" text-anchor="middle" class="pill">output/shorts/&lt;slug&gt;_&lt;id&gt;.mp4</text>
 
   <!-- final -> upload (planned) -->
   <path class="flow" d="M510,802 L510,834" marker-end="url(#arrow)" stroke-dasharray="6 5"/>
