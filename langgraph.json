@@ -1,0 +1,12 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "research": "./research/agent.py:graph",
+    "script": "./script/agent.py:graph",
+    "video": "./video/agent.py:graph",
+    "audio": "./audio/agent.py:graph",
+    "caption": "./caption/agent.py:graph",
+    "mux": "./mux/agent.py:graph"
+  },
+  "env": ".env"
+}

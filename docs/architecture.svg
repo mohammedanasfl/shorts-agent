@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 1000" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <style>
+      .box  { rx: 12; ry: 12; stroke-width: 2; }
+      .title{ font-size: 17px; font-weight: 700; fill: #0f172a; }
+      .num  { font-size: 12px; font-weight: 700; fill: #64748b; }
+      .eng  { font-size: 11.5px; fill: #475569; }
+      .pill { font-size: 14px; font-weight: 600; fill: #0f172a; }
+      .flow { stroke: #475569; stroke-width: 2; fill: none; }
+      .lbl  { font-size: 12px; fill: #334155; font-style: italic; }
+      .cap  { font-size: 13px; fill: #64748b; }
+      .h1   { font-size: 22px; font-weight: 700; fill: #0f172a; }
+    </style>
+  </defs>
+
+  <!-- backdrop keeps text legible on GitHub light AND dark themes -->
+  <rect x="0" y="0" width="1020" height="1000" fill="#ffffff"/>
+
+  <text x="510" y="40" text-anchor="middle" class="h1">Shorts-agents &#8212; pipeline architecture</text>
+  <text x="510" y="62" text-anchor="middle" class="cap">7 independent LangGraph StateGraphs, chained by JSON data contracts</text>
+
+  <!-- input -->
+  <rect x="400" y="82" width="220" height="38" rx="19" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="510" y="106" text-anchor="middle" class="pill">context &#8212; one-line idea</text>
+  <path class="flow" d="M510,120 L510,150" marker-end="url(#arrow)"/>
+
+  <!-- 1 Research -->
+  <rect class="box" x="390" y="150" width="240" height="74" fill="#eff6ff" stroke="#3b82f6"/>
+  <text x="404" y="172" class="num">1</text>
+  <text x="510" y="182" text-anchor="middle" class="title">Research</text>
+  <text x="510" y="204" text-anchor="middle" class="eng">Groq qwen + Tavily / Wikipedia / arXiv / YouTube</text>
+  <path class="flow" d="M510,224 L510,262" marker-end="url(#arrow)"/>
+  <text x="522" y="247" class="lbl">ResearchBrief</text>
+
+  <!-- 2 Script -->
+  <rect class="box" x="390" y="262" width="240" height="74" fill="#eef2ff" stroke="#6366f1"/>
+  <text x="404" y="284" class="num">2</text>
+  <text x="510" y="294" text-anchor="middle" class="title">Script</text>
+  <text x="510" y="316" text-anchor="middle" class="eng">Groq qwen &#8212; scenes, narration, video prompts</text>
+
+  <!-- fork from Script: same ScriptPackage feeds Video AND Audio -->
+  <path class="flow" d="M510,336 L510,360" fill="none"/>
+  <path class="flow" d="M510,360 L250,360 L250,392" marker-end="url(#arrow)"/>
+  <path class="flow" d="M510,360 L770,360 L770,392" marker-end="url(#arrow)"/>
+  <text x="510" y="352" text-anchor="middle" class="lbl">ScriptPackage &#8212; siblings, both read the same script</text>
+  <text x="150" y="384" class="lbl">video_prompt</text>
+  <text x="678" y="384" class="lbl">narration</text>
+
+  <!-- 3 Video (left branch) -->
+  <rect class="box" x="130" y="392" width="240" height="74" fill="#faf5ff" stroke="#a855f7"/>
+  <text x="144" y="414" class="num">3</text>
+  <text x="250" y="424" text-anchor="middle" class="title">Video</text>
+  <text x="250" y="446" text-anchor="middle" class="eng">Gemini / Veo via Playwright&#8211;CDP</text>
+
+  <!-- 4 Audio (right branch) -->
+  <rect class="box" x="650" y="392" width="240" height="74" fill="#f0fdfa" stroke="#14b8a6"/>
+  <text x="664" y="414" class="num">4</text>
+  <text x="770" y="424" text-anchor="middle" class="title">Audio</text>
+  <text x="770" y="446" text-anchor="middle" class="eng">Groq Orpheus TTS &#8212; voice per short</text>
+
+  <!-- Audio -> Caption -->
+  <path class="flow" d="M770,466 L770,512" marker-end="url(#arrow)"/>
+  <text x="782" y="494" class="lbl">AudioPackage (S*.wav)</text>
+
+  <!-- 5 Caption -->
+  <rect class="box" x="650" y="512" width="240" height="74" fill="#f0fdf4" stroke="#22c55e"/>
+  <text x="664" y="534" class="num">5</text>
+  <text x="770" y="544" text-anchor="middle" class="title">Caption</text>
+  <text x="770" y="566" text-anchor="middle" class="eng">Groq whisper-large-v3-turbo STT</text>
+
+  <!-- Video clips travel down the left rail to Mux (read from disk) -->
+  <path class="flow" d="M250,466 L250,690 L390,690" marker-end="url(#arrow)"/>
+  <text x="150" y="580" class="lbl">clips on disk</text>
+  <text x="150" y="596" class="lbl">output/videos</text>
+
+  <!-- Caption -> Mux -->
+  <path class="flow" d="M770,586 L770,690 L630,690" marker-end="url(#arrow)"/>
+  <text x="640" y="620" class="lbl" text-anchor="end">CaptionPackage</text>
+  <text x="640" y="636" class="lbl" text-anchor="end">(word timings)</text>
+
+  <!-- 6 Mux (join) -->
+  <rect class="box" x="390" y="652" width="240" height="74" fill="#fff7ed" stroke="#f97316"/>
+  <text x="404" y="674" class="num">6</text>
+  <text x="510" y="684" text-anchor="middle" class="title">Mux</text>
+  <text x="510" y="706" text-anchor="middle" class="eng">ffmpeg + Pillow karaoke overlay</text>
+
+  <!-- Mux -> final -->
+  <path class="flow" d="M510,726 L510,762" marker-end="url(#arrow)"/>
+
+  <!-- final short -->
+  <rect x="360" y="762" width="300" height="40" rx="20" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+  <text x="510" y="787" text-anchor="middle" class="pill">output/shorts/final_short.mp4</text>
+
+  <!-- final -> upload (planned) -->
+  <path class="flow" d="M510,802 L510,834" marker-end="url(#arrow)" stroke-dasharray="6 5"/>
+
+  <!-- 7 Upload (planned) -->
+  <rect class="box" x="390" y="834" width="240" height="60" fill="#f8fafc" stroke="#94a3b8" stroke-dasharray="6 5"/>
+  <text x="404" y="856" class="num">7</text>
+  <text x="510" y="866" text-anchor="middle" class="title" fill="#64748b">Upload</text>
+  <text x="510" y="884" text-anchor="middle" class="eng">planned &#8212; YouTube / TikTok / Reels</text>
+
+  <!-- legend: shared internals -->
+  <rect x="60" y="702" width="300" height="118" rx="10" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="76" y="726" class="title" font-size="14">Every stage graph</text>
+  <text x="76" y="748" class="eng">START &#8594; seed &#8594; per-scene loop &#8594; finalize &#8594; END</text>
+  <text x="76" y="770" class="eng">&#8226; bounded retry-then-skip (never hangs)</text>
+  <text x="76" y="788" class="eng">&#8226; on-disk cache keyed per scene (S1&#8230;S6)</text>
+  <text x="76" y="806" class="eng">&#8226; unchanged scenes cost zero API calls</text>
+</svg>
