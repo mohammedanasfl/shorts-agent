@@ -51,3 +51,35 @@ REVISION_FEEDBACK = """Your previous voice-over was {actual} words total, over t
 Rewrite the FULL deliverable (all 3 sections: Style Directive, Script Table, Video AI Prompts)
 with total voice-over under {max_words} words. Keep the same visual style and scene count.
 Follow the STRICT OUTPUT FORMAT exactly, as before."""
+
+
+# The critic judges a draft that already satisfies the word-count guardrail --
+# it's a quality gate, not a length gate. It gets the original brief plus the
+# draft, and nothing else, so its verdict isn't swayed by the writer's own
+# reasoning in the message history.
+CRITIC_SYSTEM_PROMPT = """You are an exacting Short-Form Video Editor reviewing a script draft before it goes into production.
+
+You will receive the original ResearchBrief text and the drafted script (Style Directive, Script Table, Video AI Prompts).
+
+Judge the draft against this rubric:
+1. Hook: does Scene 1's voice-over open with a strong, verbatim payload hook from the brief?
+2. Narration: is it punchy, zero-fluff, and on-budget -- not just under the word limit, but tight?
+3. Grounding: is every factual claim traceable to the brief? Flag anything invented or exaggerated.
+4. Coherence: does each scene's Visual Action match its Voice-Over and the chosen Style Directive?
+5. Payoff: does the script land on a clear closing beat rather than trailing off?
+
+STRICT OUTPUT FORMAT (a parser reads this -- follow it exactly):
+- First line: exactly "VERDICT: PASS" or "VERDICT: REVISE".
+- If REVISE, follow with a line "ISSUES:" and then at most 3 bullet lines, each
+  naming the scene id it applies to and the concrete fix needed, e.g.
+  "- S2: narration restates S1's hook instead of advancing the story."
+- If PASS, output nothing after the verdict line.
+- Do not rewrite the script yourself -- only judge it."""
+
+
+CRITIC_FEEDBACK = """A quality review of your last draft found these issues:
+{issues}
+
+Rewrite the FULL deliverable (all 3 sections: Style Directive, Script Table, Video AI Prompts)
+fixing every issue above. Keep the same visual style, scene count, and stay under the word limit.
+Follow the STRICT OUTPUT FORMAT exactly, as before."""

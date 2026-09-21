@@ -18,3 +18,9 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 # structured output on nested scene arrays is the qwen malform failure mode
 # documented in research/models.py.
 script_llm = ChatGroq(model="qwen/qwen3.8-27b", max_tokens=950, reasoning_effort="none", temperature=0.3)
+
+# Separate low-temperature client for the quality critic: it emits a short
+# PASS/REVISE verdict plus at most a few issue lines, not prose, so a much
+# smaller max_tokens is enough. temperature=0 for a consistent, non-creative
+# judgment call.
+critic_llm = ChatGroq(model="qwen/qwen3.8-27b", max_tokens=300, reasoning_effort="none", temperature=0)

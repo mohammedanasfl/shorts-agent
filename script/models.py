@@ -43,6 +43,14 @@ class ScriptState(TypedDict):
     scenes: list
     word_count: int
     revisions: int
+    # Quality-critique loop (separate from the word-count revise loop above):
+    # brief_text is the rendered brief so the critic can judge grounding
+    # without wading through the writer's whole message history; critiques is
+    # the bounded counter route_after_critic checks against MAX_CRITIQUES;
+    # critic_verdict is "pass" | "revise" | "" (not yet judged).
+    brief_text: str
+    critiques: int
+    critic_verdict: str
     script_package: Optional[ScriptPackage]
     caveats: list
 

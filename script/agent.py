@@ -9,7 +9,9 @@ from langgraph.graph import END, START, StateGraph
 
 from common.log import log
 from script.models import ScriptInput, ScriptPackage, ScriptState
-from script.nodes import finalize, generate, revise, route_after_generate, seed
+from script.nodes import (
+    critic, finalize, generate, revise, route_after_critic, route_after_generate, seed,
+)
 
 
 class ScriptError(RuntimeError):
@@ -26,14 +28,22 @@ builder = StateGraph(ScriptState, input_schema=ScriptInput)
 builder.add_node("seed", seed)
 builder.add_node("generate", generate)
 builder.add_node("revise", revise)
+builder.add_node("critic", critic)
 builder.add_node("finalize", finalize)
 
 builder.add_edge(START, "seed")
 builder.add_edge("seed", "generate")
+# Word-count guardrail first (cheap, deterministic): over budget -> revise;
+# otherwise hand off to the quality critic rather than finalizing directly.
 builder.add_conditional_edges(
-    "generate", route_after_generate, {"revise": "revise", "finalize": "finalize"}
+    "generate", route_after_generate, {"revise": "revise", "critic": "critic"}
 )
 builder.add_edge("revise", "generate")
+# Quality gate: PASS -> finalize; REVISE -> back to generate with feedback,
+# bounded by MAX_CRITIQUES inside the critic node itself.
+builder.add_conditional_edges(
+    "critic", route_after_critic, {"generate": "generate", "finalize": "finalize"}
+)
 builder.add_edge("finalize", END)
 
 graph = builder.compile()

@@ -25,7 +25,7 @@ trims every clip to its voiceover length before muxing.
 | # | Stage | Input | Output | Engine |
 |---|-------|-------|--------|--------|
 | 1 | **Research** (`research/`) | free-text context | `ResearchBrief` (topic, hooks, facts, hazards, visual cues, tone) | Groq `qwen` + Tavily / Wikipedia / arXiv / YouTube search |
-| 2 | **Script** (`script/`) | `ResearchBrief` JSON | `ScriptPackage` (per-scene visual + narration + video prompt, plus a markdown deliverable) | Groq `qwen` |
+| 2 | **Script** (`script/`) | `ResearchBrief` JSON | `ScriptPackage` (per-scene visual + narration + video prompt, plus a markdown deliverable) — passes a bounded word-count loop *and* an LLM quality critic before it's accepted | Groq `qwen` |
 | 3 | **Video** (`video/`) | `ScriptPackage` JSON | one `S{n}.mp4` clip per scene, 720×1280 portrait | Gemini (Veo) driven via CDP-attached Playwright |
 | 4 | **Audio** (`audio/`) | `ScriptPackage` JSON | one `S{n}.wav` voiceover per scene | Groq Orpheus TTS |
 | 5 | **Caption** (`caption/`) | `AudioPackage` JSON | word-level timings per scene | Groq `whisper-large-v3-turbo` STT |
@@ -99,6 +99,12 @@ python main.py video    script.json           # writes output/videos/S*.mp4
 python main.py audio    script.json           > audio.json      # sibling of video
 python main.py caption  audio.json            > caption.json
 python main.py mux      caption.json          # writes output/shorts/<slug>_<id>.mp4
+
+# Review & approve before a future Upload stage will touch anything
+python main.py review                         # list every finished short + status
+python main.py approve <short.mp4>             # -> approved
+python main.py reject  <short.mp4>             # -> rejected (kept on disk, not deleted)
+python main.py pipeline context.txt --auto-approve   # skip human review for a batch run
 ```
 
 - `research` / `script` print their result as JSON / markdown to stdout.
@@ -122,6 +128,26 @@ Finished shorts are only ever removed by a successful publish (the planned
 `output/audio`, `output/captions`, `output/shorts/scenes`) are keyed by generic
 scene id and *are* overwritten when the topic changes — only the final short is
 retained.
+
+### Review & approval
+
+A finished short is never auto-published. `run_pipeline` marks it `pending` the
+moment Mux produces it (a JSON sidecar, `output/shorts/<name>.mp4.status.json` —
+a bare `main.py mux` run with no sidecar yet is *implicitly* pending too), and a
+human clears it with:
+
+```bash
+python main.py review                # list every short + its status
+python main.py approve <short.mp4>   # -> approved
+python main.py reject  <short.mp4>   # -> rejected (file kept, never deleted here)
+```
+
+`--auto-approve` on `pipeline` skips this for headless/batch runs. This is a
+deliberate **out-of-band** lifecycle (CLI verbs + a status sidecar), not a
+LangGraph stage — a human can't be waited on inside a graph invocation without
+either blocking (breaking the never-hangs invariant every other stage follows)
+or faking the wait. `approval/store.py` holds the read/write logic; the planned
+Upload stage will publish only from `approval.store.approved_shorts()`.
 
 ### Video stage — one-time Gemini auth
 
@@ -163,12 +189,16 @@ langgraph dev
 ```
 common/     shared logging (logs/pipeline.log) and rate-limit retry helpers
 research/   stage 1 — brief from context (LLM + search tools)
-script/     stage 2 — scenes + narration + per-scene video prompts
+script/     stage 2 — scenes + narration + per-scene video prompts, gated by a
+            word-count loop and an LLM quality critic
 video/      stage 3 — Playwright→Gemini clip generation (browser.py)
 audio/      stage 4 — Orpheus TTS voiceover (tts.py), model-chosen voice/delivery
 caption/    stage 5 — whisper STT word timings (stt.py)
 mux/        stage 6 — ffmpeg assembly (encoder.py) + Pillow karaoke (captions.py)
-main.py     CLI dispatcher for every stage plus the `pipeline` composite
+approval/   out-of-band review lifecycle (pending/approved/rejected sidecars) —
+            not a LangGraph stage; see "Review & approval" above
+main.py     CLI dispatcher for every stage, the `pipeline` composite, and the
+            review/approve/reject verbs
 output/     generated media (gitignored)
 ```
 
@@ -185,4 +215,6 @@ output/     generated media (gitignored)
 ## Status
 
 Stages 1–6 are built and verified end-to-end (a 6-scene short renders to
-`output/shorts/<slug>_<id>.mp4`). The **Upload** stage is not yet implemented.
+`output/shorts/<slug>_<id>.mp4`), with a bounded Script critic/revise loop and
+an out-of-band `review`/`approve`/`reject` lifecycle on top. The **Upload**
+stage is not yet implemented — it will publish only `approval`-approved shorts.

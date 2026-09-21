@@ -17,6 +17,11 @@ voiceover length.
 `scene.narration`). So the audio→caption→mux tail is testable with **zero Gemini
 quota**.
 
+A finished short is never auto-published: it's marked `pending` the instant Mux
+produces it, and a human clears it via `review`/`approve`/`reject` CLI verbs
+(`approval/`) before the future Upload stage will touch it. See "Approval
+lifecycle" below.
+
 ## Environment facts (these have burned us before)
 
 - **The venv lives ONE LEVEL UP**, at `../venv` (i.e.
@@ -69,6 +74,15 @@ docstring. `preflight()` fails fast (~2s) if the port isn't up.
   shorts are removed only by a successful publish (the planned Upload stage deletes
   the file it uploads) — never keyed back to a fixed `final_short.mp4`. Don't
   reintroduce a fixed final filename; that's the flaw this replaced.
+- **Script has two independent bounded loops, not one.** `generate` first loops
+  through `revise` on a mechanical word-count check (`MAX_REVISIONS`, unchanged).
+  Once that passes, `critic` — a separate low-temperature LLM call — judges hook
+  strength, grounding-in-brief, and scene coherence, and can bounce the draft back
+  to `generate` with concrete feedback (`MAX_CRITIQUES`, `script/config.py`). Once
+  the critique budget is spent the draft is accepted as-is with a caveat, same
+  degrade-not-hang philosophy as everywhere else. This is deliberately *not*
+  merged into the word-count check: it's a quality gate, not a length gate, and it
+  only runs (spending Groq tokens) once the draft is already on-budget.
 
 Files per stage: `config.py` (guardrail constants), `models.py` (pydantic +
 TypedDicts), `nodes.py` (node fns), `agent.py` (graph + entry point). Plus stage
@@ -76,6 +90,24 @@ specifics: `llm.py`/`prompts.py` (research, script, audio), `tools.py` (research
 `format.py` (script, audio parsing), `browser.py` (video), `tts.py` (audio),
 `stt.py` (caption), `captions.py`+`encoder.py` (mux). Shared: `common/log.py`
 (stderr + `logs/pipeline.log`), `common/retry.py` (rate-limit backoff).
+
+## Approval lifecycle (`approval/`)
+
+Not a LangGraph stage — deliberately. A human can't be waited on inside a
+`StateGraph.invoke()` without either blocking (breaking every other stage's
+never-hangs invariant) or faking a pass-through. Instead: `run_pipeline` marks
+each finished short `pending` in `approval/store.py` (a JSON sidecar next to the
+`.mp4`, `output/shorts/<name>.mp4.status.json`) the instant Mux produces it, and
+a human reviews out of band with CLI verbs. A short with no sidecar yet is
+*implicitly* pending, so a bare `main.py mux` run also shows up in `review`.
+Reject never deletes the file — only a future Upload's successful publish does.
+
+```bash
+python main.py review                  # list every output/shorts/*.mp4 with its status
+python main.py approve <short.mp4>      # -> approved (name or path; resolved under output/shorts/)
+python main.py reject  <short.mp4>      # -> rejected (file is kept, not deleted)
+python main.py pipeline context.txt --auto-approve   # skip human review for headless/batch runs
+```
 
 ## Running
 
@@ -88,6 +120,8 @@ langgraph dev                           # inspect any graph in LangGraph Studio
 
 Register a new stage in three places: `main.py` (`STAGES` + `run_pipeline`),
 `langgraph.json` (`graphs`), and `pyproject.toml` (`[tool.setuptools] packages`).
+`approval/` is intentionally *not* in `langgraph.json` — see "Approval lifecycle"
+above for why.
 
 ## Rate limits to design around
 
@@ -96,6 +130,9 @@ research LLM account has a low tokens-per-minute ceiling (tool results are
 truncated, per-tool call counts are hard-capped in `research/tools.py`). Tavily is
 metered/paid → capped to 1 call per research run. Gemini video is the scarcest
 resource. The scene-level cache is the main defense — never weaken it casually.
+The Script critic (`script/nodes.py::critic`) adds one more Groq call per
+critique round on the same low-TPM account — bounded by `MAX_CRITIQUES` and
+wrapped in `invoke_with_retry`, same as every other LLM call in this stage.
 
 ## Secrets — never commit
 

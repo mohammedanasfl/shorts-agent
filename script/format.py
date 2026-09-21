@@ -18,6 +18,7 @@ STYLE_FIELD_PATTERNS = {
 TABLE_ROW_RE = re.compile(r"^\s*\|(.+)\|\s*$", re.MULTILINE)
 TIMING_SCENE_RE = re.compile(r"^(.*?)\s*\((S\d+)\)\s*$")
 VIDEO_PROMPT_RE = re.compile(r"^(S\d+)\s*:\s*(.+)$", re.MULTILINE)
+VERDICT_RE = re.compile(r"VERDICT:\s*(PASS|REVISE)", re.IGNORECASE)
 
 
 def brief_to_text(brief: ResearchBrief) -> str:
@@ -130,3 +131,14 @@ def parse_script_markdown(markdown: str) -> dict:
         "word_count": word_count,
         "caveats": caveats,
     }
+
+
+def parse_critic(text: str) -> tuple:
+    """Defensive parser for the critic's verdict, same philosophy as
+    parse_script_markdown: never raises. An unparseable reply defaults to
+    "pass" -- a malformed critique shouldn't force endless churn -- and the
+    caller is expected to note that in a caveat."""
+    match = VERDICT_RE.search(text)
+    verdict = match.group(1).lower() if match else "pass"
+    issues = text.split("ISSUES:", 1)[1].strip() if "ISSUES:" in text else text.strip()
+    return verdict, issues
