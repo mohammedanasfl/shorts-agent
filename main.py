@@ -1,6 +1,8 @@
-"""CLI entry point for the Shorts pipeline. Currently wires up research, script,
-video, audio, caption, and mux; the remaining stage (upload) registers into
-STAGES as it's built."""
+"""CLI entry point for the Shorts pipeline. Wires up research, script, video,
+audio, caption, and mux as STAGES, plus approval and publishing verbs
+(review/approve/reject/upload/comment/authorize-youtube) as MANAGEMENT --
+those take a filename or id, not a JSON blob, so they don't fit the STAGES
+shape."""
 import sys
 from pathlib import Path
 
@@ -11,8 +13,13 @@ from video.agent import run_video
 from audio.agent import run_audio
 from caption.agent import run_caption
 from mux.agent import run_mux
-from approval.config import APPROVED, PENDING, REJECTED
-from approval.store import list_shorts, mark
+from approval.config import APPROVED, PENDING, REJECTED, SHORTS_DIR
+from approval.store import list_shorts, mark, read_status, status_path
+from upload.config import YOUTUBE_PRIVACY_STATUS
+from upload.youtube import (
+    UploadAuthError, get_authenticated_service, post_engagement_comment,
+    run_oauth_flow, title_from_filename, upload_short,
+)
 
 
 def run_pipeline(context: str, auto_approve: bool = False):
@@ -57,10 +64,10 @@ STAGES = {
     "pipeline": run_pipeline,
 }
 
-# Approval-lifecycle verbs. These aren't pipeline stages -- they don't take a
-# JSON blob and produce the next one -- so they're dispatched separately from
-# STAGES rather than forced into that shape.
-MANAGEMENT = {"review", "approve", "reject"}
+# Approval-lifecycle and publishing verbs. These aren't pipeline stages --
+# they don't take a JSON blob and produce the next one -- so they're
+# dispatched separately from STAGES rather than forced into that shape.
+MANAGEMENT = {"review", "approve", "reject", "upload", "comment", "authorize-youtube"}
 
 
 def _usage() -> str:
@@ -87,6 +94,74 @@ if __name__ == "__main__":
                 print(f"{s['status']:9} {s['name']}")
             sys.exit(0)
 
+        if verb == "authorize-youtube":
+            # Opens a real browser and blocks on your approval -- never
+            # called from anywhere else in this codebase. See
+            # upload/youtube.py's module docstring, point 3.
+            run_oauth_flow()
+            sys.exit(0)
+
+        if verb == "upload":
+            if len(args) < 2:
+                print("Usage: python main.py upload <short.mp4>", file=sys.stderr)
+                sys.exit(1)
+            name = args[1]
+            status = read_status(name)
+            if status != APPROVED:
+                print(
+                    f"'{name}' is not approved (status={status}). "
+                    f"Run: python main.py approve {name}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            video_path = SHORTS_DIR / Path(name).name
+            if not video_path.exists():
+                print(f"No short at {video_path}", file=sys.stderr)
+                sys.exit(1)
+
+            title, description, tags = title_from_filename(video_path)
+            try:
+                youtube = get_authenticated_service()
+            except UploadAuthError as e:
+                print(str(e), file=sys.stderr)
+                sys.exit(1)
+
+            video_id = upload_short(
+                youtube, str(video_path), title, description, tags, YOUTUBE_PRIVACY_STATUS
+            )
+            youtube_url = f"https://youtube.com/shorts/{video_id}"
+
+            if YOUTUBE_PRIVACY_STATUS == "public":
+                post_engagement_comment(youtube, video_id, "Thanks for watching -- let me know what you think!")
+            else:
+                log(
+                    "upload",
+                    f"skipped engagement comment on {video_id}: video is private "
+                    f"(would 403). Once it's public: python main.py comment {video_id} <text>",
+                )
+
+            # Delete-on-publish: the short is removed only now that it's
+            # actually been published -- see mux/config.py and CLAUDE.md.
+            video_path.unlink()
+            status_path(name).unlink(missing_ok=True)
+            log("upload", f"published {name} -> {youtube_url}")
+            print(youtube_url)
+            sys.exit(0)
+
+        if verb == "comment":
+            if len(args) < 3:
+                print("Usage: python main.py comment <video_id> <text>", file=sys.stderr)
+                sys.exit(1)
+            try:
+                youtube = get_authenticated_service()
+            except UploadAuthError as e:
+                print(str(e), file=sys.stderr)
+                sys.exit(1)
+            thread_id = post_engagement_comment(youtube, args[1], args[2])
+            print(thread_id or "Comment failed (see logs).")
+            sys.exit(0)
+
+        # approve / reject
         if len(args) < 2:
             print(f"Usage: python main.py {verb} <short.mp4>", file=sys.stderr)
             sys.exit(1)

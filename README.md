@@ -11,7 +11,7 @@ can run one at a time for debugging or be chained end-to-end.
 
 ```
 context ──▶ Research ──▶ Script ──┬─▶ Video ─────────────┐
-                                  └─▶ Audio ─▶ Caption ─▶ Mux ─▶ final short ─▶ (Upload)
+                                  └─▶ Audio ─▶ Caption ─▶ Mux ─▶ final short ─▶ Human Approval ─▶ Upload
 ```
 
 The pipeline is deliberately **narration-paced**: the script drives everything,
@@ -30,7 +30,7 @@ trims every clip to its voiceover length before muxing.
 | 4 | **Audio** (`audio/`) | `ScriptPackage` JSON | one `S{n}.wav` voiceover per scene | Groq Orpheus TTS |
 | 5 | **Caption** (`caption/`) | `AudioPackage` JSON | word-level timings per scene | Groq `whisper-large-v3-turbo` STT |
 | 6 | **Mux** (`mux/`) | `CaptionPackage` JSON | `output/shorts/<slug>_<id>.mp4` | ffmpeg + Pillow-rendered karaoke captions |
-| 7 | **Upload** | _(planned)_ | published short | — |
+| 7 | **Upload** (`upload/`) | an **approved** short's filename | published YouTube video (id + URL); local file deleted | YouTube Data API v3 |
 
 **Audio is a sibling of Video, not downstream of it** — both consume the
 `ScriptPackage` (audio reads each scene's `narration`, video reads its
@@ -63,6 +63,8 @@ tested without spending any Gemini video quota.
 - **ffmpeg / ffprobe** on `PATH` (used by video validation and the mux stage)
 - API keys: **Groq** (LLM, TTS, STT) and **Tavily** (research web search)
 - Google Chrome + an authenticated Gemini account (only for the Video stage)
+- A Google Cloud Console project + OAuth client (only for the Upload stage —
+  see "Upload — YouTube publishing" below)
 
 > **Note on ffmpeg:** the mux stage assumes an ffmpeg build **without** libass /
 > freetype / drawtext (the common Homebrew stripped build). That's why captions
@@ -100,11 +102,16 @@ python main.py audio    script.json           > audio.json      # sibling of vid
 python main.py caption  audio.json            > caption.json
 python main.py mux      caption.json          # writes output/shorts/<slug>_<id>.mp4
 
-# Review & approve before a future Upload stage will touch anything
+# Review & approve before Upload will touch anything
 python main.py review                         # list every finished short + status
 python main.py approve <short.mp4>             # -> approved
 python main.py reject  <short.mp4>             # -> rejected (kept on disk, not deleted)
 python main.py pipeline context.txt --auto-approve   # skip human review for a batch run
+
+# Publish an approved short to YouTube
+python main.py authorize-youtube               # one-time, interactive (opens a browser)
+python main.py upload <short.mp4>              # must be approved; deletes the local file on success
+python main.py comment <video_id> "..."        # manual engagement comment, once the video is public
 ```
 
 - `research` / `script` print their result as JSON / markdown to stdout.
@@ -122,8 +129,8 @@ is a content hash of the topic and its scene clips. This means:
 - Re-running with **identical inputs is idempotent** — same filename, overwritten
   in place, so you don't pile up duplicate copies.
 
-Finished shorts are only ever removed by a successful publish (the planned
-**Upload** stage deletes the specific file it uploads). Everything under
+Finished shorts are only ever removed by a successful publish (the **Upload**
+stage deletes the specific file it uploads, and only that one). Everything under
 `output/` is gitignored. The per-scene intermediates (`output/videos`,
 `output/audio`, `output/captions`, `output/shorts/scenes`) are keyed by generic
 scene id and *are* overwritten when the topic changes — only the final short is
@@ -146,8 +153,47 @@ python main.py reject  <short.mp4>   # -> rejected (file kept, never deleted her
 deliberate **out-of-band** lifecycle (CLI verbs + a status sidecar), not a
 LangGraph stage — a human can't be waited on inside a graph invocation without
 either blocking (breaking the never-hangs invariant every other stage follows)
-or faking the wait. `approval/store.py` holds the read/write logic; the planned
-Upload stage will publish only from `approval.store.approved_shorts()`.
+or faking the wait. `approval/store.py` holds the read/write logic; `upload`
+(below) refuses to run on anything that isn't `approved`.
+
+### Upload — YouTube publishing
+
+`upload/` publishes an **approved** short to YouTube via the Data API v3. It's
+intentionally two files (`config.py`, `youtube.py`), not a LangGraph stage —
+a minimal, direct wrapper around Google's client, not a rebuild of it.
+
+**One-time setup:**
+1. In [Google Cloud Console](https://console.cloud.google.com/), create a
+   project, enable the **YouTube Data API v3**, and create an OAuth client
+   (type **Desktop app**). Download it and save as
+   `.auth/youtube/client_secret.json` (the whole `.auth/` directory is
+   gitignored already — no extra setup needed).
+2. `python main.py authorize-youtube` — opens a real browser once, you approve
+   access, writes `.auth/youtube/token.json`. Every later `upload`/`comment`
+   call refreshes silently from that file, no browser involved.
+
+**Per short:**
+```bash
+python main.py upload <short.mp4>       # must already be `approved` via review/approve
+```
+Title/description/tags are derived from the short's own filename (the one
+thing still guaranteed to exist by the time a human gets around to approving
+it — see `upload/youtube.py::title_from_filename()`). On a successful upload
+the local `.mp4` and its `.status.json` sidecar are deleted — the
+delete-on-publish half of the flaw this project fixed earlier.
+
+**Two real API constraints worth knowing before you touch this:**
+- **An unaudited Cloud Console project forces every upload to private**,
+  regardless of what's requested — this is why `upload/config.py`'s
+  `YOUTUBE_PRIVACY_STATUS` defaults to `"private"`, not `"public"`. Flip it
+  once your project passes Google's compliance audit.
+- **A private video 403s on any comment posted through the API** until it's
+  actually public. `upload` skips the auto-engagement-comment when the
+  upload is private (it would just fail every time) — use
+  `python main.py comment <video_id> "..."` by hand once the video is public.
+
+Full rationale (plus the "no comment-pin endpoint" and "OAuth needs a real
+browser" constraints) is in `upload/youtube.py`'s module docstring.
 
 ### Video stage — one-time Gemini auth
 
@@ -197,8 +243,10 @@ caption/    stage 5 — whisper STT word timings (stt.py)
 mux/        stage 6 — ffmpeg assembly (encoder.py) + Pillow karaoke (captions.py)
 approval/   out-of-band review lifecycle (pending/approved/rejected sidecars) —
             not a LangGraph stage; see "Review & approval" above
+upload/     stage 7 — YouTube Data API v3 publishing (config.py, youtube.py) —
+            also not a LangGraph stage; see "Upload — YouTube publishing" above
 main.py     CLI dispatcher for every stage, the `pipeline` composite, and the
-            review/approve/reject verbs
+            review/approve/reject/upload/comment/authorize-youtube verbs
 output/     generated media (gitignored)
 ```
 
@@ -214,7 +262,10 @@ output/     generated media (gitignored)
 
 ## Status
 
-Stages 1–6 are built and verified end-to-end (a 6-scene short renders to
-`output/shorts/<slug>_<id>.mp4`), with a bounded Script critic/revise loop and
-an out-of-band `review`/`approve`/`reject` lifecycle on top. The **Upload**
-stage is not yet implemented — it will publish only `approval`-approved shorts.
+All 7 stages are built. Stages 1–6 are verified end-to-end (a 6-scene short
+renders to `output/shorts/<slug>_<id>.mp4`), with a bounded Script
+critic/revise loop and an out-of-band `review`/`approve`/`reject` lifecycle on
+top. **Upload** (`upload/`) publishes only `approved` shorts to YouTube and
+deletes them locally on success; it's verified offline (approval-gate
+enforcement, credential-error paths) — a live first upload needs your own
+Cloud Console OAuth client, via `python main.py authorize-youtube`.

@@ -6,8 +6,9 @@ it captures conventions and environment facts that aren't obvious from a glance.
 ## What this is
 
 A 7-stage agentic pipeline that turns a one-line idea into a finished vertical
-short: **Research → Script → Video → Audio → Caption → Mux → Upload(planned)**.
-Each stage is its own LangGraph `StateGraph` package. See `README.md` and
+short: **Research → Script → Video → Audio → Caption → Mux → Upload**.
+Stages 1-6 are each their own LangGraph `StateGraph` package; Upload
+(`upload/`) is deliberately not one — see "Upload / publishing" below. See `README.md` and
 `docs/architecture.svg` for the full picture. The pipeline is narration-paced:
 the script drives everything; the mux stage trims each video clip to its
 voiceover length.
@@ -109,6 +110,46 @@ python main.py reject  <short.mp4>      # -> rejected (file is kept, not deleted
 python main.py pipeline context.txt --auto-approve   # skip human review for headless/batch runs
 ```
 
+## Upload / publishing (`upload/`)
+
+Also not a LangGraph stage, and not a `<stage>/config.py, models.py, nodes.py,
+agent.py` package like stages 1-6 — deliberately kept to two files
+(`upload/config.py`, `upload/youtube.py`) as a **minimal drop-in** of a
+verified, working YouTube Data API v3 client, not a rebuild of it. Don't add
+`upload/nodes.py`/`agent.py`/a `StateGraph` unless there's an actual reason to
+(e.g. it needs to loop or fan out) — there wasn't one, so there isn't one.
+
+`upload_short()`/`post_engagement_comment()`/`get_authenticated_service()`/
+`run_oauth_flow()` carry four confirmed, tested constraints about the real
+API in their module docstring — read it before touching that file. In short:
+(1) there's no comment-pin endpoint, only post; (2) an unaudited Cloud
+Console project forces every upload to private regardless of what's
+requested, so `upload/config.py`'s `YOUTUBE_PRIVACY_STATUS` defaults to
+`"private"`; (3) `run_oauth_flow()` opens a real browser and blocks — it is
+**only** ever called from `python main.py authorize-youtube`, never
+automatically, never from `run_pipeline`; (4) a private video 403s on
+`commentThreads.insert`, so `main.py`'s `upload` verb skips the
+auto-comment when the upload is private and logs a caveat pointing at the
+manual `comment` verb instead.
+
+Title/description/tags are derived mechanically from the short's own
+filename (`upload/youtube.py::title_from_filename()`) rather than from
+`ScriptPackage` — the generic-scene-id intermediates that produced the short
+may already be overwritten by a later topic by the time a human gets around
+to approving it, but the content-addressed filename never is.
+
+`main.py`'s `upload` verb enforces the approval gate in code (refuses to run
+`get_authenticated_service()`/`upload_short()` at all unless
+`approval.store.read_status(...) == APPROVED`) and deletes the local `.mp4` +
+its `.status.json` sidecar only after a successful `upload_short()` call —
+the delete-on-publish half of the flaw fixed earlier in this project.
+
+```bash
+python main.py authorize-youtube        # one-time, interactive; opens a browser
+python main.py upload <short.mp4>       # must be approved first; deletes on success
+python main.py comment <video_id> "..." # manual workaround for constraint 4, once public
+```
+
 ## Running
 
 ```bash
@@ -118,10 +159,12 @@ python main.py pipeline context.txt     # full run — DOES spend Gemini video q
 langgraph dev                           # inspect any graph in LangGraph Studio
 ```
 
-Register a new stage in three places: `main.py` (`STAGES` + `run_pipeline`),
-`langgraph.json` (`graphs`), and `pyproject.toml` (`[tool.setuptools] packages`).
-`approval/` is intentionally *not* in `langgraph.json` — see "Approval lifecycle"
-above for why.
+Register a new *graph* stage in three places: `main.py` (`STAGES` +
+`run_pipeline`), `langgraph.json` (`graphs`), and `pyproject.toml`
+(`[tool.setuptools] packages`). `approval/` and `upload/` are intentionally
+*not* in `langgraph.json` — neither is a StateGraph (see "Approval lifecycle"
+and "Upload / publishing" above) — but both still need the `pyproject.toml`
+packages entry and a `main.py` `MANAGEMENT` entry.
 
 ## Rate limits to design around
 
@@ -136,8 +179,12 @@ wrapped in `invoke_with_retry`, same as every other LLM call in this stage.
 
 ## Secrets — never commit
 
-`.env` (Groq + Tavily keys), `.auth/`, and `.chrome-profile/` (live Gemini session
-tokens/cookies) are gitignored and must stay that way. `output/`, `logs/`,
-`.langgraph_api/`, and root artifacts (`brief.json`, `script_*.json`,
-`script_output.md`) are generated and also gitignored. There were no commits before
-the initial one, so no secret has ever entered git history — keep it that way.
+`.env` (Groq + Tavily keys), `.auth/` (live Gemini session tokens/cookies at
+`.auth/gemini/`, and YouTube OAuth credentials at `.auth/youtube/client_secret.json` +
+`.auth/youtube/token.json`), and `.chrome-profile/` are gitignored and must
+stay that way — the whole `.auth/` directory is blanket-ignored, so a new
+per-service subdirectory under it needs no `.gitignore` edit. `output/`,
+`logs/`, `.langgraph_api/`, and root artifacts (`brief.json`, `script_*.json`,
+`script_output.md`) are generated and also gitignored. There were no commits
+before the initial one, so no secret has ever entered git history — keep it
+that way.

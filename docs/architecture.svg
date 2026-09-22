@@ -20,7 +20,7 @@
   <rect x="0" y="0" width="1020" height="1100" fill="#ffffff"/>
 
   <text x="510" y="40" text-anchor="middle" class="h1">Shorts-agents &#8212; pipeline architecture</text>
-  <text x="510" y="62" text-anchor="middle" class="cap">7 independent LangGraph StateGraphs, chained by JSON data contracts</text>
+  <text x="510" y="62" text-anchor="middle" class="cap">6 independent LangGraph StateGraphs + an out-of-band approval/upload lifecycle</text>
 
   <!-- input -->
   <rect x="400" y="82" width="220" height="38" rx="19" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="2"/>
@@ -111,14 +111,17 @@
   <text x="200" y="861" class="lbl" text-anchor="end">not a graph node &#8212;</text>
   <text x="200" y="877" class="lbl" text-anchor="end">CLI + status sidecar</text>
 
-  <!-- approval -> upload (planned; publishes only approved shorts) -->
-  <path class="flow" d="M510,894 L510,926" marker-end="url(#arrow)" stroke-dasharray="6 5"/>
+  <!-- approval -> upload (built; publishes only approved shorts) -->
+  <path class="flow" d="M510,894 L510,926" marker-end="url(#arrow)"/>
 
-  <!-- 7 Upload (planned) -->
-  <rect class="box" x="390" y="926" width="240" height="60" fill="#f8fafc" stroke="#94a3b8" stroke-dasharray="6 5"/>
+  <!-- 7 Upload: also not a graph node. upload/config.py + upload/youtube.py,
+       a minimal direct wrapper around the YouTube Data API v3 client. -->
+  <rect class="box" x="390" y="926" width="240" height="60" fill="#fef2f2" stroke="#ef4444"/>
   <text x="404" y="948" class="num">7</text>
-  <text x="510" y="958" text-anchor="middle" class="title" fill="#64748b">Upload</text>
-  <text x="510" y="976" text-anchor="middle" class="eng">planned &#8212; publishes approved shorts</text>
+  <text x="510" y="958" text-anchor="middle" class="title">Upload</text>
+  <text x="510" y="976" text-anchor="middle" class="eng">YouTube Data API v3 &#8212; approved shorts only</text>
+  <text x="200" y="952" class="lbl" text-anchor="end">not a graph node &#8212;</text>
+  <text x="200" y="968" class="lbl" text-anchor="end">config.py + youtube.py</text>
 
   <!-- legend: shared internals -->
   <rect x="60" y="702" width="300" height="118" rx="10" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>

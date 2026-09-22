@@ -12,3 +12,6 @@ langgraph-cli[inmem]
 playwright
 groq
 pillow
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
